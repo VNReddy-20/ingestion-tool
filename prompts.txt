@@ -1,0 +1,8 @@
+I used Grok, created by xAI, to assist with:
+
+- Designing a Flask-based web app for ClickHouse and Flat File ingestion.
+- Writing HTML/CSS/JS for a simple UI with source selection, column checkboxes, and data preview.
+- Implementing ClickHouse connection with JWT authentication using clickhouse-connect.
+- Handling CSV file uploads and processing with pandas.
+- Structuring README.md with setup and testing instructions.
+- Debugging API endpoints for connect, columns, preview, and ingest.
