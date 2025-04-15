@@ -1,0 +1,4 @@
+Flask==2.3.3
+clickhouse-connect==0.7.12
+pandas==2.2.2
+werkzeug==3.0.3
