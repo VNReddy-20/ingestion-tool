@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Data Ingestion Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin-bottom: 20px; }
+        .error { color: red; }
+        .success { color: green; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        button { margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Data Ingestion Tool</h1>
+    
+    <div class="section">
+        <h3>Select Source</h3>
+        <select id="source" onchange="toggleInputs()">
+            <option value="">Select Source</option>
+            <option value="clickhouse">ClickHouse</option>
+            <option value="flatfile">Flat File</option>
+        </select>
+    </div>
+
+    <div class="section" id="clickhouse_inputs" style="display: none;">
+        <h3>ClickHouse Connection</h3>
+        <input type="text" id="ch_host" placeholder="Host (e.g., localhost)">
+        <input type="text" id="ch_port" placeholder="Port (e.g., 8123)">
+        <input type="text" id="ch_database" placeholder="Database">
+        <input type="text" id="ch_user" placeholder="User">
+        <input type="password" id="ch_jwt" placeholder="JWT Token">
+    </div>
+
+    <div class="section" id="flatfile_inputs" style="display: none;">
+        <h3>Flat File Upload</h3>
+        <input type="file" id="ff_file" accept=".csv">
+    </div>
+
+    <div class="section">
+        <button onclick="connect()">Connect</button>
+        <p id="status"></p>
+    </div>
+
+    <div class="section" id="table_selection" style="display: none;">
+        <h3>Select Table</h3>
+        <select id="table" onchange="loadColumns()">
+            <option value="">Select Table</option>
+        </select>
+    </div>
+
+    <div class="section" id="column_selection" style="display: none;">
+        <h3>Select Columns</h3>
+        <div id="columns"></div>
+        <button onclick="preview()">Preview</button>
+    </div>
+
+    <div class="section" id="preview_section" style="display: none;">
+        <h3>Data Preview</h3>
+        <table id="preview_table"></table>
+    </div>
+
+    <div class="section">
+        <h3>Select Target</h3>
+        <select id="target">
+            <option value="">Select Target</option>
+            <option value="clickhouse">ClickHouse</option>
+            <option value="flatfile">Flat File</option>
+        </select>
+    </div>
+
+    <div class="section">
+        <button onclick="ingest()">Start Ingestion</button>
+        <p id="result"></p>
+    </div>
+
+    <script>
+        function toggleInputs() {
+            const source = document.getElementById('source').value;
+            document.getElementById('clickhouse_inputs').style.display = source === 'clickhouse' ? 'block' : 'none';
+            document.getElementById('flatfile_inputs').style.display = source === 'flatfile' ? 'block' : 'none';
+            document.getElementById('table_selection').style.display = 'none';
+            document.getElementById('column_selection').style.display = 'none';
+            document.getElementById('preview_section').style.display = 'none';
+            document.getElementById('status').innerText = '';
+            document.getElementById('result').innerText = '';
+        }
+
+        function connect() {
+            const source = document.getElementById('source').value;
+            const status = document.getElementById('status');
+            status.innerText = 'Connecting...';
+            const formData = new FormData();
+            formData.append('source', source);
+            if (source === 'clickhouse') {
+                formData.append('ch_host', document.getElementById('ch_host').value);
+                formData.append('ch_port', document.getElementById('ch_port').value);
+                formData.append('ch_database', document.getElementById('ch_database').value);
+                formData.append('ch_user', document.getElementById('ch_user').value);
+                formData.append('ch_jwt', document.getElementById('ch_jwt').value);
+            } else if (source === 'flatfile') {
+                formData.append('ff_file', document.getElementById('ff_file').files[0]);
+            }
+
+            fetch('/connect', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    status.innerText = '';
+                    if (data.status === 'success') {
+                        const tableSelect = document.getElementById('table');
+                        tableSelect.innerHTML = '<option value="">Select Table</option>';
+                        data.tables.forEach(table => {
+                            const option = document.createElement('option');
+                            option.value = table;
+                            option.text = table;
+                            tableSelect.appendChild(option);
+                        });
+                        document.getElementById('table_selection').style.display = 'block';
+                        if (source === 'flatfile') {
+                            loadColumns();
+                        }
+                    } else {
+                        status.className = 'error';
+                        status.innerText = data.message;
+                    }
+                })
+                .catch(error => {
+                    status.className = 'error';
+                    status.innerText = 'Connection failed: ' + error;
+                });
+        }
+
+        function loadColumns() {
+            const source = document.getElementById('source').value;
+            const table = document.getElementById('table').value;
+            if (!table) return;
+            const status = document.getElementById('status');
+            status.innerText = 'Fetching columns...';
+            const formData = new FormData();
+            formData.append('source', source);
+            formData.append('table', table);
+            if (source === 'clickhouse') {
+                formData.append('ch_host', document.getElementById('ch_host').value);
+                formData.append('ch_port', document.getElementById('ch_port').value);
+                formData.append('ch_database', document.getElementById('ch_database').value);
+                formData.append('ch_user', document.getElementById('ch_user').value);
+                formData.append('ch_jwt', document.getElementById('ch_jwt').value);
+            }
+
+            fetch('/columns', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    status.innerText = '';
+                    if (data.status === 'success') {
+                        const columnsDiv = document.getElementById('columns');
+                        columnsDiv.innerHTML = '';
+                        data.columns.forEach(col => {
+                            const checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.name = 'columns';
+                            checkbox.value = col;
+                            checkbox.id = 'col_' + col;
+                            const label = document.createElement('label');
+                            label.htmlFor = 'col_' + col;
+                            label.innerText = col;
+                            columnsDiv.appendChild(checkbox);
+                            columnsDiv.appendChild(label);
+                            columnsDiv.appendChild(document.createElement('br'));
+                        });
+                        document.getElementById('column_selection').style.display = 'block';
+                    } else {
+                        status.className = 'error';
+                        status.innerText = data.message;
+                    }
+                })
+                .catch(error => {
+                    status.className = 'error';
+                    status.innerText = 'Failed to fetch columns: ' + error;
+                });
+        }
+
+        function preview() {
+            const source = document.getElementById('source').value;
+            const table = document.getElementById('table').value;
+            const columns = Array.from(document.querySelectorAll('input[name="columns"]:checked')).map(cb => cb.value);
+            if (!columns.length) {
+                document.getElementById('status').innerText = 'Please select at least one column';
+                return;
+            }
+            const status = document.getElementById('status');
+            status.innerText = 'Fetching preview...';
+            const formData = new FormData();
+            formData.append('source', source);
+            formData.append('table', table);
+            columns.forEach(col => formData.append('columns', col));
+            if (source === 'clickhouse') {
+                formData.append('ch_host', document.getElementById('ch_host').value);
+                formData.append('ch_port', document.getElementById('ch_port').value);
+                formData.append('ch_database', document.getElementById('ch_database').value);
+                formData.append('ch_user', document.getElementById('ch_user').value);
+                formData.append('ch_jwt', document.getElementById('ch_jwt').value);
+            }
+
+            fetch('/preview', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    status.innerText = '';
+                    if (data.status === 'success') {
+                        const table = document.getElementById('preview_table');
+                        table.innerHTML = '';
+                        const headerRow = document.createElement('tr');
+                        data.columns.forEach(col => {
+                            const th = document.createElement('th');
+                            th.innerText = col;
+                            headerRow.appendChild(th);
+                        });
+                        table.appendChild(headerRow);
+                        data.data.forEach(row => {
+                            const tr = document.createElement('tr');
+                            row.forEach(cell => {
+                                const td = document.createElement('td');
+                                td.innerText = cell;
+                                tr.appendChild(td);
+                            });
+                            table.appendChild(tr);
+                        });
+                        document.getElementById('preview_section').style.display = 'block';
+                    } else {
+                        status.className = 'error';
+                        status.innerText = data.message;
+                    }
+                })
+                .catch(error => {
+                    status.className = 'error';
+                    status.innerText = 'Preview failed: ' + error;
+                });
+        }
+
+        function ingest() {
+            const source = document.getElementById('source').value;
+            const table = document.getElementById('table').value;
+            const columns = Array.from(document.querySelectorAll('input[name="columns"]:checked')).map(cb => cb.value);
+            const target = document.getElementById('target').value;
+            if (!columns.length) {
+                document.getElementById('status').innerText = 'Please select at least one column';
+                return;
+            }
+            if (!target) {
+                document.getElementById('status').innerText = 'Please select a target';
+                return;
+            }
+            const status = document.getElementById('status');
+            status.innerText = 'Ingesting...';
+            const result = document.getElementById('result');
+            const formData = new FormData();
+            formData.append('source', source);
+            formData.append('table', table);
+            columns.forEach(col => formData.append('columns', col));
+            formData.append('target', target);
+            if (source === 'clickhouse' || target === 'clickhouse') {
+                formData.append('ch_host', document.getElementById('ch_host').value);
+                formData.append('ch_port', document.getElementById('ch_port').value);
+                formData.append('ch_database', document.getElementById('ch_database').value);
+                formData.append('ch_user', document.getElementById('ch_user').value);
+                formData.append('ch_jwt', document.getElementById('ch_jwt').value);
+            }
+
+            fetch('/ingest', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    status.innerText = '';
+                    if (data.status === 'success') {
+                        result.className = 'success';
+                        result.innerText = `${data.message} (${data.record_count} records processed)`;
+                    } else {
+                        result.className = 'error';
+                        result.innerText = data.message;
+                    }
+                })
+                .catch(error => {
+                    status.innerText = '';
+                    result.className = 'error';
+                    result.innerText = 'Ingestion failed: ' + error;
+                });
+        }
+    </script>
+</body>
+</html>
